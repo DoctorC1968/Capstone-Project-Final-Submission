@@ -1292,8 +1292,8 @@ cor(Merged.Banks.9$adj.complaint.count, Merged.Banks.9$Pct.Loans.Charged.Off)
 #0.1301609
 
 #Now work on goodwill. Goodwill is defined by excess of purchase price over fair market value acquired under the purchase method
-#of accounting. We will compute the ratio of Goodwill to fair market value as a predictor variable. We will compute fair market
-#value as assets(excluding goodwill) minus liabilities. 
+#of accounting. We will compute the ratio of Goodwill to fair market value and see how this is related
+#to complaint count. We will compute fair market value as assets(excluding goodwill) minus liabilities. 
 Ranked.Banks.By.Goodwill_12_31_11 <- read.csv('Banks ranked by goodwill 12-31-11.csv', stringsAsFactors = FALSE)
 Ranked.Banks.By.Goodwill_3_31_12 <- read.csv( 'Banks ranked by goodwill 3-31-12.csv', stringsAsFactors = FALSE)
 Ranked.Banks.By.Goodwill_6_30_12 <- read.csv('Banks ranked by goodwill 6-30-12.csv', stringsAsFactors = FALSE)
@@ -1520,7 +1520,7 @@ summary(Number.Of.Ranks.11$numranks)
 Merged.Banks.10 <- inner_join(Merged.Banks.9,subset(All.Ranked.Banks.By.Goodwill.Top.100, select=c("Goodwill", "Bank.Name", "quarter.year"),
                                                by=c("Bank.Name","quarter.year")))
 str(Merged.Banks.10)
-cor(Merged.Banks.10$adj.complaint.count,Merged.Banks.10$Goodwill)
+cor(Merged.Banks.10$adj.complaint.count, Merged.Banks.10$Goodwill)
 #-0.1037175. Good, we would expect complaints to decrease as goodwill increases. 
 
 Merged.Banks.11 <- inner_join(Merged.Banks.10,subset(All.Ranked.Banks.By.Assets.Top.100, select=c("Total.Assets", "Bank.Name", "quarter.year"),
@@ -1539,6 +1539,11 @@ Merged.Banks.12$Goodwill.Pct <-
   Merged.Banks.12$Goodwill/(Merged.Banks.12$Total.Assets - Merged.Banks.12$Goodwill - Merged.Banks.12$Total.Liabilities)
 cor(Merged.Banks.12$Goodwill.Pct, Merged.Banks.12$adj.complaint.count)
 #-0.2120867 
+
+#See how well complaint count predicts Goodwill percent
+GW.model <- lm(adj.complaint.count ~ Goodwill.Pct, data = Merged.Banks.12)
+summary(GW.model)
+#Not too well. Adjusted R^2 = 0.04437. 
 
 #Next look at return on assets
 #Return on assets (ROA) is an indicator of how profitable a company is relative to its total assets. 
@@ -1863,6 +1868,7 @@ fit1 <- glm(adj.complaint.count ~
              data = Merged.Banks.15[Merged.Banks.15$train,], 
              family = poisson())
 summary(fit1)
+str(summary(fit1))
 #Get rid of adj.Restruct.Loans.80.89.Days.P.D2 because p-value is too big
 #Amount past due 90+ days has to go because the negative sign of the coefficient doesn't make sense. 
 
@@ -1907,3 +1913,67 @@ g + geom_bar(aes(weight = V2)) +
   labs(title = "Lift chart for predicted adj. mortgage complaint counts") + 
   labs(x = "Model score quartile", y = "Sum of adjusted complaint count")
 
+#Below we find the distribution of the multiplicative weights from the Poisson model "fit2", where
+#the weights are calculated using the observations from the test data
+
+(PD.30.89 <- summary(exp(summary(fit2)[12]$coefficients[2]*Merged.Banks.15[Merged.Banks.15$test,]$adj.Amt.Past.Due.30.89.Days2)))
+(RL.90 <- summary(exp(summary(fit2)[12]$coefficients[3]*Merged.Banks.15[Merged.Banks.15$test,]$adj.Restruct.Loans.90.Or.More.Days.P.D)))
+(PCO <- summary(exp(summary(fit2)[12]$coefficients[4]*Merged.Banks.15[Merged.Banks.15$test,]$Pct.Loans.Charged.Off)))
+(NRL <- summary(exp(summary(fit2)[12]$coefficients[5]*Merged.Banks.15[Merged.Banks.15$test,]$adj.Nonaccr.Restr.Loans)))
+(CC <- summary(exp(summary(fit2)[12]$coefficients[6]*Merged.Banks.15[Merged.Banks.15$test,]$adj.CC.Loans)))
+
+(PD.30.89.distr <- c(PD.30.89[[1]], PD.30.89[[2]], PD.30.89[[3]], PD.30.89[[5]], PD.30.89[[6]]))
+(RL.90.distr <- c(RL.90[[1]], RL.90[[2]], RL.90[[3]], RL.90[[5]], RL.90[[6]]))
+(PCO.distr <- c(PCO[[1]], PCO[[2]], PCO[[3]], PCO[[5]], PCO[[6]]))
+(NRL.distr <- c(NRL[[1]], NRL[[2]], NRL[[3]], NRL[[5]], NRL[[6]]))
+(CC.distr <- c(CC[[1]], CC[[2]], CC[[3]], CC[[5]], CC[[6]]))
+
+(All.weight.distr <- rbind(PD.30.89.distr, RL.90.distr, PCO.distr, NRL.distr, CC.distr))
+write.csv(All.weight.distr, "AllWeightDistr.csv")
+
+#Below we graph the effects of the predictor variables upon predicted complaint counts 
+#as one predictor variable varies while the others are held fixed
+start =  quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Amt.Past.Due.30.89.Days2)[2]
+finish = quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Amt.Past.Due.30.89.Days2)[4]
+x.axis <- seq(from = start, to = finish, by = (finish - start)/20)
+y.axis <- 100*exp(summary(fit2)[12]$coefficients[2]*x.axis)
+(PD.30.89.graph <- as.data.frame(cbind(x.axis, y.axis)))
+ggplot(data = PD.30.89.graph, aes(x.axis, y.axis)) + geom_point() +
+  theme(text = element_text(size = 30)) +
+  xlab("Amount past due 30-89 days") + ylab("Predicted complaint count")
+
+start =  quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Restruct.Loans.90.Or.More.Days.P.D)[2]
+finish = quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Restruct.Loans.90.Or.More.Days.P.D)[4]
+x.axis <- seq(from = start, to = finish, by = (finish - start)/20)
+y.axis <- 100*exp(summary(fit2)[12]$coefficients[3]*x.axis)
+(Restr.90.graph <- as.data.frame(cbind(x.axis, y.axis)))
+ggplot(data = Restr.90.graph, aes(x.axis, y.axis)) + geom_point() +
+  theme(text = element_text(size = 30)) +
+  xlab("Restr. loans 90+ days past due") + ylab("Predicted complaint count")
+
+start =  quantile(Merged.Banks.15[Merged.Banks.15$test, ]$Pct.Loans.Charged.Off)[2]
+finish = quantile(Merged.Banks.15[Merged.Banks.15$test, ]$Pct.Loans.Charged.Off)[4]
+x.axis <- seq(from = start, to = finish, by = (finish - start)/20)
+y.axis <- 100*exp(summary(fit2)[12]$coefficients[4]*x.axis)
+(Pct.Charged.Off.graph <- as.data.frame(cbind(x.axis, y.axis)))
+ggplot(data = Pct.Charged.Off.graph , aes(x.axis, y.axis)) + geom_point() +
+  theme(text = element_text(size = 30)) +
+  xlab("Pct. charged off") + ylab("Predicted complaint count")
+
+start =  quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Nonaccr.Restr.Loans)[2]
+finish = quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.Nonaccr.Restr.Loans)[4]
+x.axis <- seq(from = start, to = finish, by = (finish - start)/20)
+y.axis <- 100 * exp(summary(fit2)[12]$coefficients[5]*x.axis)
+(Nonaccr.graph <- as.data.frame(cbind(x.axis, y.axis)))
+ggplot(data = Nonaccr.graph , aes(x.axis, y.axis)) + geom_point() +
+  theme(text = element_text(size = 30)) +
+  xlab("Nonaccrual restructured loan amount") + ylab("Predicted complaint count")
+
+start =  quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.CC.Loans)[2]
+finish = quantile(Merged.Banks.15[Merged.Banks.15$test, ]$adj.CC.Loans)[4]
+x.axis <- seq(from = start, to = finish, by = (finish - start)/20)
+y.axis <- 100*exp(summary(fit2)[12]$coefficients[6]*x.axis)
+(CC.graph <- as.data.frame(cbind(x.axis, y.axis)))
+ggplot(data = CC.graph , aes(x.axis, y.axis)) + geom_point() +
+  theme(text = element_text(size = 30)) +
+  xlab("Credit card loans") + ylab("Predicted complaint count")
